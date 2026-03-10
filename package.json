@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:webhook": "node scripts/test-webhook.mjs"
   },
   "dependencies": {
     "mongoose": "^9.2.4",
