@@ -5,7 +5,7 @@ const schema = new Schema<ITinyWebhookEstoqueDoc>(
   {
     cnpj: { type: String, required: true },
     idEcommerce: { type: Number },
-    tipoEstoque: { type: String, required: true },
+    tipoEstoque: { type: String },
     saldo: { type: Number, required: true },
     idProduto: { type: Number, required: true },
     sku: { type: String, required: true },

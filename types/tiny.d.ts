@@ -22,7 +22,7 @@ export interface ITinyWebhookEstoque {
   idEcommerce: number;
   tipo: "estoque";
   dados: {
-    tipoEstoque: "F" | "D"; // F=Physical, D=Available
+    tipoEstoque?: "F" | "D"; // F=Physical, D=Available — not always sent by Tiny
     saldo: number;
     idProduto: number;
     sku: string;
@@ -132,7 +132,7 @@ export interface ITinyWebhookVendaDoc {
 export interface ITinyWebhookEstoqueDoc {
   cnpj: string;
   idEcommerce: number;
-  tipoEstoque: "F" | "D";
+  tipoEstoque?: "F" | "D";
   saldo: number;
   idProduto: number;
   sku: string;
