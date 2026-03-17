@@ -19,7 +19,7 @@ const emptyChannel = {
   byStatus: {},
 };
 
-const schema = new Schema<ITinySalesBucket>(
+const SaleSchema = new Schema<ITinySalesBucket>(
   {
     date: { type: Date, required: true },
     product: { type: String, required: true },
@@ -36,9 +36,8 @@ const schema = new Schema<ITinySalesBucket>(
   { timestamps: true },
 );
 
-schema.index({ product: 1, date: 1 }, { unique: true });
-schema.index({ sku: 1, date: 1 });
-schema.index({ date: 1 });
+SaleSchema.index({ product: 1, date: 1 }, { unique: true });
+SaleSchema.index({ sku: 1, date: 1 });
+SaleSchema.index({ date: 1 });
 
-export const TinySalesBucket =
-  models.TinySalesBucket || model("TinySalesBucket", schema);
+export const Sales = models.SalesBucket || model("SalesBucket", SaleSchema);

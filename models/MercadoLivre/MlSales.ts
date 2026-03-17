@@ -105,4 +105,4 @@ SaleBucketSchema.index({ date: 1 });
 SaleBucketSchema.index({ product: 1 });
 
 export const SalesBucket =
-  models.SalesBucket || model("SalesBucket", SaleBucketSchema);
+  models.SalesBucket || model("MlSalesBucket", SaleBucketSchema);

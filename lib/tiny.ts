@@ -8,8 +8,8 @@ import {
 } from "@/types/tiny";
 import { TinyOrder } from "@/models/Tiny/TinyOrder";
 import { TinyRateLimit } from "@/models/Tiny/TinyRateLimit";
-import { TinySalesBucket } from "@/models/Tiny/TinySalesBucket";
 import { ProductRepository } from "@/repositories/ProductRepository";
+import { SaleRepository } from "@/repositories/SaleRepository";
 
 // ---------------------------------------------------------------------------
 // Environment
@@ -292,14 +292,8 @@ async function recordTinySale(
       inc[`${channelKey}.byStatus.${situacao}.orders`] = 1;
     }
 
-    await TinySalesBucket.findOneAndUpdate(
-      { product, date: saleDate },
-      {
-        $setOnInsert: { product, sku, date: saleDate, unitPrice },
-        $inc: inc,
-      },
-      { upsert: true, new: true },
-    );
+    const saleRepo = new SaleRepository();
+    await saleRepo.incrementBucket(product, saleDate, sku, unitPrice, inc);
 
     try {
       await upsertProductStock(Number(itemId));
@@ -341,10 +335,8 @@ async function reverseTinySale(orderId: string): Promise<void> {
       }
     }
 
-    await TinySalesBucket.findOneAndUpdate(
-      { product: order.itemId, date: order.saleDate },
-      { $inc: inc },
-    );
+    const saleRepo = new SaleRepository();
+    await saleRepo.decrementBucket(order.itemId, order.saleDate, inc);
   }
 
   await TinyOrder.updateMany({ orderId }, { counted: false });

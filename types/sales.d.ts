@@ -30,12 +30,11 @@ export interface ISaleBucket {
 
   unitPrice: number;
 
-  // Modalities
+  // Modalities (Mercado Livre)
   total: IModalityMetrics;
   fulfillment: IModalityMetrics;
   flex: IModalityMetrics;
   dropOff: IModalityMetrics;
-  //
 
   createdAt?: Date;
   updatedAt?: Date;
