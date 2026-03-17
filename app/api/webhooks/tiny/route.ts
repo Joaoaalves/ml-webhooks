@@ -21,6 +21,12 @@ export async function POST(req: NextRequest) {
 
   try {
     const text = await req.text();
+
+    // Tiny sends empty POST requests to verify the endpoint exists
+    if (!text.trim()) {
+      return NextResponse.json({ ok: true });
+    }
+
     try {
       payload = JSON.parse(text);
     } catch {
