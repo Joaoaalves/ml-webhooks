@@ -57,6 +57,32 @@ export type ITinyWebhookPayload =
 // Tiny API response types
 // ---------------------------------------------------------------------------
 
+export interface ITinyStockDeposit {
+  nome: string;
+  saldo: number;
+  empresa: string;
+  ignorar?: boolean;
+}
+
+export interface ITinyStockResponse {
+  retorno: {
+    status_processamento: number;
+    status: "OK" | "Erro";
+    erros?: Array<{ erro: string }>;
+    produto?: {
+      id: number;
+      nome: string;
+      codigo: string;
+      unidade: string;
+      saldo: number;
+      saldoReservado?: number;
+      depositos?: ITinyStockDeposit[];
+    };
+  };
+}
+
+//
+
 export interface ITinyOrderItem {
   item: {
     id: number;
@@ -157,6 +183,21 @@ export interface ITinyWebhookSituacaoPedidoDoc {
   raw: Record<string, unknown>;
   receivedAt: Date;
   processed: boolean;
+}
+
+export interface ITinyProductStockDoc {
+  productId: string;
+  name: string;
+  sku: string;
+  unit: string;
+  balance: number;
+  reservedBalance: number;
+  deposits: Array<{
+    name: string;
+    ignore: boolean;
+    balance: number;
+    company: string;
+  }>;
 }
 
 export interface ITinyProduct {

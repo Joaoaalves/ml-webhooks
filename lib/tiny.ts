@@ -1,12 +1,14 @@
 import {
   ITinyOrderResponse,
   ITinyProductResponse,
+  ITinyStockResponse,
   ITinyWebhookEstoque,
   ITinyWebhookSituacaoPedido,
   ITinyWebhookVenda,
 } from "@/types/tiny";
 import { TinyOrder } from "@/models/TinyOrder";
 import { TinyProduct } from "@/models/TinyProduct";
+import { TinyProductStock } from "@/models/TinyProductStock";
 import { TinyRateLimit } from "@/models/TinyRateLimit";
 import { TinySalesBucket } from "@/models/TinySalesBucket";
 
@@ -97,6 +99,47 @@ async function getOrder(id: number): Promise<ITinyOrderResponse> {
   return tinyPost<ITinyOrderResponse>("pedido.obter.php", { id: String(id) });
 }
 
+async function getProductStock(id: number): Promise<ITinyStockResponse> {
+  return tinyPost<ITinyStockResponse>("produto.obter.estoque.php", { id: String(id) });
+}
+
+// ---------------------------------------------------------------------------
+// Stock snapshot helper
+// ---------------------------------------------------------------------------
+
+async function upsertProductStock(productId: number): Promise<void> {
+  const allowed = await acquireRateLimit();
+  if (!allowed) throw new RateLimitError("Tiny rate limit reached");
+
+  const res = await getProductStock(productId);
+
+  if (res.retorno.status !== "OK" || !res.retorno.produto) {
+    const erros = res.retorno.erros?.map((e) => e.erro).join(", ") ?? "unknown";
+    throw new Error(`Tiny produto.obter.estoque failed: ${erros}`);
+  }
+
+  const p = res.retorno.produto;
+
+  await TinyProductStock.findOneAndUpdate(
+    { productId: String(p.id) },
+    {
+      productId: String(p.id),
+      name: p.nome,
+      sku: p.codigo,
+      unit: p.unidade ?? "",
+      balance: p.saldo ?? 0,
+      reservedBalance: p.saldoReservado ?? 0,
+      deposits: (p.depositos ?? []).map((d) => ({
+        name: d.nome,
+        ignore: d.ignorar ?? false,
+        balance: d.saldo ?? 0,
+        company: d.empresa,
+      })),
+    },
+    { upsert: true, new: true },
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Topic handlers
 // ---------------------------------------------------------------------------
@@ -139,6 +182,8 @@ export async function handleEstoque(payload: ITinyWebhookEstoque): Promise<void>
     },
     { upsert: true, new: true },
   );
+
+  await upsertProductStock(payload.dados.idProduto);
 }
 
 /**
@@ -240,6 +285,8 @@ async function recordTinySale(
       },
       { upsert: true, new: true },
     );
+
+    await upsertProductStock(itemId);
   }
 }
 
