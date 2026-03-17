@@ -22,20 +22,28 @@ const RATE_LIMIT_PER_MIN = 30;
 // Status codes
 // ---------------------------------------------------------------------------
 
-// Statuses that mean the order has been paid/confirmed and should be counted.
-const PAID_STATUSES = [
-  "aprovado",
-  "faturado",
-  "preparando entrega",
-  "em entrega",
-  "entregue",
-];
+// Statuses that mean the order should be counted as a valid sale.
+const VALID_STATUSES = ["pronto para envio", "enviado", "entregue"];
 
 // Statuses that should trigger a sale reversal.
-const CANCELLED_STATUSES = ["cancelado", "devolvido"];
+const CANCELLED_STATUSES = ["cancelado"];
 
-function isPaid(situacao: string): boolean {
-  return PAID_STATUSES.some((s) => situacao.toLowerCase().includes(s));
+// Maps nomeEcommerce (case-insensitive) to the bucket channel key.
+const CHANNEL_MAP: Record<string, string> = {
+  "mercado livre fulfillment": "mercadoLivreFulfillment",
+  "mercado livre": "mercadoLivre",
+  "shopee": "shopee",
+  "amazon": "amazon",
+  "tiktok shop": "tiktok",
+  "magalu": "magalu",
+};
+
+function getChannelKey(nomeEcommerce: string): string | null {
+  return CHANNEL_MAP[nomeEcommerce.toLowerCase()] ?? null;
+}
+
+function isValid(situacao: string): boolean {
+  return VALID_STATUSES.some((s) => situacao.toLowerCase().includes(s));
 }
 
 function isCancelled(situacao: string): boolean {
@@ -153,12 +161,16 @@ export async function handleVenda(payload: ITinyWebhookVenda): Promise<void> {
   const orderId = String(pedido.id);
   const situacao = pedido.situacao ?? pedido.codigo_situacao ?? "";
 
-  if (isPaid(situacao)) {
-    await recordTinySale(pedido, orderId);
+  const nomeEcommerce = payload.dados.nomeEcommerce ?? "";
+
+  if (payload.tipo === "inclusao_pedido") {
+    // Only new orders are counted — atualizacao_pedido never adds, only cancels
+    if (isValid(situacao)) {
+      await recordTinySale(pedido, orderId, nomeEcommerce);
+    }
   } else if (isCancelled(situacao)) {
     await reverseTinySale(orderId);
   }
-  // Other statuses (em aberto, etc.) are ignored — sale not counted yet
 }
 
 /**
@@ -179,38 +191,52 @@ export async function handleSituacaoPedido(
 async function recordTinySale(
   pedido: NonNullable<ITinyOrderResponse["retorno"]["pedido"]>,
   orderId: string,
+  nomeEcommerce: string,
 ): Promise<void> {
   // Parse date: DD/MM/YYYY → Date (UTC midnight)
   const [dd, mm, yyyy] = pedido.data_pedido.split("/");
   const saleDate = new Date(Date.UTC(Number(yyyy), Number(mm) - 1, Number(dd)));
 
+  const situacao = pedido.situacao ?? pedido.codigo_situacao ?? "";
+  const channelKey = getChannelKey(nomeEcommerce);
+
   for (const lineItem of pedido.itens) {
     const { id: itemId, codigo: sku, descricao: name, quantidade: qty, valor_unitario } =
       lineItem.item;
 
-    const existing = await TinyOrder.findOne({ orderId }).lean();
-    if (existing?.counted) continue;
-
     const unitPrice = valor_unitario;
     const product = String(itemId);
+    const revenue = unitPrice * qty;
+
+    const existing = await TinyOrder.findOne({ orderId, itemId: product }).lean();
+    if (existing?.counted) continue;
 
     await TinyOrder.findOneAndUpdate(
-      { orderId },
-      { orderId, itemId: product, sku, name, quantity: qty, unitPrice, saleDate, counted: true },
+      { orderId, itemId: product },
+      { orderId, itemId: product, sku, name, quantity: qty, unitPrice, saleDate, counted: true, ecommerce: nomeEcommerce, situacao },
       { upsert: true, new: true },
     );
 
-    const revenue = unitPrice * qty;
+    const inc: Record<string, number> = {
+      "total.items": qty,
+      "total.revenue": revenue,
+      "total.orders": 1,
+    };
+
+    if (channelKey) {
+      inc[`${channelKey}.valid.items`] = qty;
+      inc[`${channelKey}.valid.revenue`] = revenue;
+      inc[`${channelKey}.valid.orders`] = 1;
+      inc[`${channelKey}.byStatus.${situacao}.items`] = qty;
+      inc[`${channelKey}.byStatus.${situacao}.revenue`] = revenue;
+      inc[`${channelKey}.byStatus.${situacao}.orders`] = 1;
+    }
 
     await TinySalesBucket.findOneAndUpdate(
       { product, date: saleDate },
       {
         $setOnInsert: { product, sku, date: saleDate, unitPrice },
-        $inc: {
-          "total.items": qty,
-          "total.revenue": revenue,
-          "total.orders": 1,
-        },
+        $inc: inc,
       },
       { upsert: true, new: true },
     );
@@ -218,23 +244,41 @@ async function recordTinySale(
 }
 
 async function reverseTinySale(orderId: string): Promise<void> {
-  const order = await TinyOrder.findOne({ orderId, counted: true }).lean();
-  if (!order) return;
+  const items = await TinyOrder.find({ orderId, counted: true }).lean();
+  if (!items.length) return;
 
-  const revenue = order.unitPrice * order.quantity;
+  for (const order of items) {
+    const revenue = order.unitPrice * order.quantity;
+    const channelKey = order.ecommerce ? getChannelKey(order.ecommerce) : null;
+    const situacao = order.situacao ?? "";
 
-  await TinySalesBucket.findOneAndUpdate(
-    { product: order.itemId, date: order.saleDate },
-    {
-      $inc: {
-        "total.items": -order.quantity,
-        "total.revenue": -revenue,
-        "total.orders": -1,
-      },
-    },
-  );
+    const inc: Record<string, number> = {
+      "total.items": -order.quantity,
+      "total.revenue": -revenue,
+      "total.orders": -1,
+    };
 
-  await TinyOrder.findOneAndUpdate({ orderId }, { counted: false });
+    if (channelKey) {
+      inc[`${channelKey}.valid.items`] = -order.quantity;
+      inc[`${channelKey}.valid.revenue`] = -revenue;
+      inc[`${channelKey}.valid.orders`] = -1;
+      inc[`${channelKey}.invalid.items`] = order.quantity;
+      inc[`${channelKey}.invalid.revenue`] = revenue;
+      inc[`${channelKey}.invalid.orders`] = 1;
+      if (situacao) {
+        inc[`${channelKey}.byStatus.${situacao}.items`] = -order.quantity;
+        inc[`${channelKey}.byStatus.${situacao}.revenue`] = -revenue;
+        inc[`${channelKey}.byStatus.${situacao}.orders`] = -1;
+      }
+    }
+
+    await TinySalesBucket.findOneAndUpdate(
+      { product: order.itemId, date: order.saleDate },
+      { $inc: inc },
+    );
+  }
+
+  await TinyOrder.updateMany({ orderId }, { counted: false });
 }
 
 // ---------------------------------------------------------------------------

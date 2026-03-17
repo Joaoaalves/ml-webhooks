@@ -10,9 +10,13 @@ export interface ITinyWebhookVenda {
     id: number;
     numero: number;
     data: string; // DD/MM/YYYY
+    idPedidoEcommerce?: string;
     codigoSituacao: string;
+    descricaoSituacao?: string;
     idContato: number;
+    nomeEcommerce?: string;
     cliente?: Record<string, unknown>;
+    formaEnvio?: Record<string, unknown>;
   };
 }
 
@@ -179,6 +183,14 @@ export interface ITinyOrder {
   unitPrice: number;
   saleDate: Date;
   counted: boolean;
+  ecommerce?: string; // nomeEcommerce from webhook payload
+  situacao?: string;  // pedido.situacao at time of counting
+}
+
+export interface IChannelMetrics {
+  valid: { items: number; revenue: number; orders: number };
+  invalid: { items: number; revenue: number; orders: number };
+  byStatus: Record<string, { items: number; revenue: number; orders: number }>;
 }
 
 export interface ITinySalesBucket {
@@ -186,9 +198,11 @@ export interface ITinySalesBucket {
   product: string; // Tiny product ID as string
   sku: string;
   unitPrice: number;
-  total: {
-    items: number;
-    revenue: number;
-    orders: number;
-  };
+  total: { items: number; revenue: number; orders: number };
+  mercadoLivre: IChannelMetrics;
+  mercadoLivreFulfillment: IChannelMetrics;
+  shopee: IChannelMetrics;
+  amazon: IChannelMetrics;
+  tiktok: IChannelMetrics;
+  magalu: IChannelMetrics;
 }
