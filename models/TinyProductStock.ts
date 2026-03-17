@@ -4,6 +4,7 @@ import { model, models, Schema } from "mongoose";
 const depositSchema = new Schema(
   {
     name: { type: String, required: true },
+    tipo: { type: String, required: true },
     ignore: { type: Boolean, required: true, default: false },
     balance: { type: Number, required: true, default: 0 },
     company: { type: String, required: true },

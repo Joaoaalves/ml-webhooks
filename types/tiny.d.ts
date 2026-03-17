@@ -57,11 +57,14 @@ export type ITinyWebhookPayload =
 // Tiny API response types
 // ---------------------------------------------------------------------------
 
+// Each entry in the depositos array is wrapped: { deposito: { ... } }
 export interface ITinyStockDeposit {
-  nome: string;
-  saldo: number;
-  empresa: string;
-  ignorar?: boolean;
+  deposito: {
+    nome: string;
+    desconsiderar: "S" | "N"; // S=ignore from totals, N=include
+    saldo: number;
+    empresa: string;
+  };
 }
 
 export interface ITinyStockResponse {
@@ -194,6 +197,7 @@ export interface ITinyProductStockDoc {
   reservedBalance: number;
   deposits: Array<{
     name: string;
+    tipo: string;  // normalized slug derived from name (e.g. "galpao", "avaria", "a_caminho", "full_mercado_livre")
     ignore: boolean;
     balance: number;
     company: string;

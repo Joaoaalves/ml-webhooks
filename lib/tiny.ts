@@ -129,9 +129,10 @@ async function upsertProductStock(productId: number): Promise<void> {
       unit: p.unidade ?? "",
       balance: p.saldo ?? 0,
       reservedBalance: p.saldoReservado ?? 0,
-      deposits: (p.depositos ?? []).map((d) => ({
+      deposits: (p.depositos ?? []).map(({ deposito: d }) => ({
         name: d.nome,
-        ignore: d.ignorar ?? false,
+        tipo: d.nome.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, ""),
+        ignore: d.desconsiderar === "S",
         balance: d.saldo ?? 0,
         company: d.empresa,
       })),
