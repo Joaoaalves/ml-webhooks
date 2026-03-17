@@ -19,7 +19,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   } catch (err) {
     if (err instanceof RateLimitError) {
-      console.warn("[tiny-webhook/estoque] Rate limit reached, asking Tiny to retry");
+      console.warn(
+        "[tiny-webhook/estoque] Rate limit reached, asking Tiny to retry",
+      );
       return NextResponse.json({ error: "rate_limit" }, { status: 429 });
     }
     console.error("[tiny-webhook/estoque] Error processing estoque:", err);

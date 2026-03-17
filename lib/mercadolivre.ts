@@ -5,10 +5,10 @@ import {
   IMlTokenResponse,
 } from "@/types/mercado-livre";
 import { IMlWebhookPayload } from "@/types/webhook";
-import { MlOrder } from "@/models/MlOrder";
-import { MlProduct } from "@/models/MlProduct";
-import { MlToken } from "@/models/MlToken";
-import { SalesBucket } from "@/models/Sales";
+import { MlOrder } from "@/models/MercadoLivre/MlOrder";
+import { MlProduct } from "@/models/MercadoLivre/MlProduct";
+import { MlToken } from "@/models/MercadoLivre/MlToken";
+import { SalesBucket } from "@/models/MercadoLivre/MlSales";
 
 // ---------------------------------------------------------------------------
 // Environment
@@ -26,7 +26,9 @@ const TOKEN_BUFFER_MS = 5 * 60 * 1000;
 // Authentication
 // ---------------------------------------------------------------------------
 
-async function refreshAccessToken(refreshToken: string): Promise<IMlTokenResponse> {
+async function refreshAccessToken(
+  refreshToken: string,
+): Promise<IMlTokenResponse> {
   const res = await fetch(`${BASE_URL}/oauth/token`, {
     method: "POST",
     headers: {
@@ -69,7 +71,11 @@ export async function getAccessToken(): Promise<string> {
 
   await MlToken.findOneAndUpdate(
     {},
-    { accessToken: data.access_token, refreshToken: data.refresh_token, expiresAt },
+    {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token,
+      expiresAt,
+    },
     { upsert: true, new: true },
   );
 
@@ -108,7 +114,9 @@ async function handleItems(resource: string): Promise<void> {
   const sku =
     item.attributes.find((a) => a.id === "SELLER_SKU")?.value_name ?? undefined;
 
-  const unitsPerPackAttr = item.attributes.find((a) => a.id === "UNITS_PER_PACK");
+  const unitsPerPackAttr = item.attributes.find(
+    (a) => a.id === "UNITS_PER_PACK",
+  );
   const unitsPerPack = unitsPerPackAttr?.value_name
     ? parseInt(unitsPerPackAttr.value_name, 10)
     : undefined;
@@ -145,7 +153,12 @@ async function handleFulfillmentOperations(resource: string): Promise<void> {
   if (!op.inventory_id) return;
 
   // Only act on operations that confirm a stock change.
-  const stockChangingTypes = ["INBOUND", "WITHDRAWAL", "SALE_CONFIRMATION", "RETURN"];
+  const stockChangingTypes = [
+    "INBOUND",
+    "WITHDRAWAL",
+    "SALE_CONFIRMATION",
+    "RETURN",
+  ];
   if (!stockChangingTypes.includes(op.type)) return;
 
   await MlProduct.findOneAndUpdate(
@@ -160,9 +173,10 @@ async function handleFulfillmentOperations(resource: string): Promise<void> {
  */
 async function handleStockLocations(resource: string): Promise<void> {
   // The resource path already points to the correct stock endpoint.
-  const data = await mlGet<{ available_quantity: number; inventory_id?: string }>(
-    resource,
-  );
+  const data = await mlGet<{
+    available_quantity: number;
+    inventory_id?: string;
+  }>(resource);
 
   if (data.inventory_id) {
     await MlProduct.findOneAndUpdate(
@@ -191,7 +205,10 @@ async function handleOrders(resource: string): Promise<void> {
   }
 }
 
-async function recordSale(order: IMlOrderResponse, orderId: string): Promise<void> {
+async function recordSale(
+  order: IMlOrderResponse,
+  orderId: string,
+): Promise<void> {
   for (const lineItem of order.order_items) {
     const existingOrder = await MlOrder.findOne({ orderId }).lean();
     if (existingOrder?.counted) continue; // already counted, skip
@@ -208,13 +225,26 @@ async function recordSale(order: IMlOrderResponse, orderId: string): Promise<voi
     // Truncate order date to the start of the day (UTC)
     const rawDate = new Date(order.date_created);
     const saleDate = new Date(
-      Date.UTC(rawDate.getUTCFullYear(), rawDate.getUTCMonth(), rawDate.getUTCDate()),
+      Date.UTC(
+        rawDate.getUTCFullYear(),
+        rawDate.getUTCMonth(),
+        rawDate.getUTCDate(),
+      ),
     );
 
     // Save order record
     await MlOrder.findOneAndUpdate(
       { orderId },
-      { orderId, itemId, sku, quantity, unitPrice, logisticType, saleDate, counted: true },
+      {
+        orderId,
+        itemId,
+        sku,
+        quantity,
+        unitPrice,
+        logisticType,
+        saleDate,
+        counted: true,
+      },
       { upsert: true, new: true },
     );
 
@@ -266,9 +296,12 @@ async function reverseSale(orderId: string): Promise<void> {
   await MlOrder.findOneAndUpdate({ orderId }, { counted: false });
 }
 
-function resolveModalityField(logisticType: string): "fulfillment" | "flex" | "dropOff" {
+function resolveModalityField(
+  logisticType: string,
+): "fulfillment" | "flex" | "dropOff" {
   if (logisticType === "fulfillment") return "fulfillment";
-  if (logisticType === "xd-drop-off" || logisticType === "drop-off") return "dropOff";
+  if (logisticType === "xd-drop-off" || logisticType === "drop-off")
+    return "dropOff";
   return "flex"; // self-service → flex
 }
 
@@ -280,7 +313,9 @@ function resolveModalityField(logisticType: string): "fulfillment" | "flex" | "d
  * Processes a webhook notification based on its topic.
  * Uses `resource` as the ML API path for authenticated calls.
  */
-export async function processWebhook(payload: IMlWebhookPayload): Promise<void> {
+export async function processWebhook(
+  payload: IMlWebhookPayload,
+): Promise<void> {
   const { topic, resource } = payload;
 
   switch (topic) {

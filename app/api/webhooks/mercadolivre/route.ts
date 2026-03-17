@@ -14,7 +14,10 @@ export async function POST(req: NextRequest) {
   }
 
   if (!payload._id || !payload.topic || !payload.resource) {
-    return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Missing required fields" },
+      { status: 400 },
+    );
   }
 
   try {
@@ -31,8 +34,14 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, id: webhook._id });
   } catch (err) {
-    console.error(`[webhook] Error processing ${payload.topic} ${payload.resource}:`, err);
+    console.error(
+      `[webhook] Error processing ${payload.topic} ${payload.resource}:`,
+      err,
+    );
     // Return 200 anyway so ML doesn't keep retrying for server errors
-    return NextResponse.json({ ok: false, error: String(err) }, { status: 200 });
+    return NextResponse.json(
+      { ok: false, error: String(err) },
+      { status: 200 },
+    );
   }
 }

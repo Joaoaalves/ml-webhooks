@@ -15,14 +15,22 @@ export async function POST(req: NextRequest) {
     await connectDB();
     await TinyWebhookVendaRepository.save(payload);
     await handleVenda(payload);
-    await TinyWebhookVendaRepository.markProcessed(payload.dados.id, payload.tipo);
+    await TinyWebhookVendaRepository.markProcessed(
+      payload.dados.id,
+      payload.tipo,
+    );
     return NextResponse.json({ ok: true });
   } catch (err) {
     if (err instanceof RateLimitError) {
-      console.warn("[tiny-webhook/venda] Rate limit reached, asking Tiny to retry");
+      console.warn(
+        "[tiny-webhook/venda] Rate limit reached, asking Tiny to retry",
+      );
       return NextResponse.json({ error: "rate_limit" }, { status: 429 });
     }
-    console.error(`[tiny-webhook/venda] Error processing tipo=${payload.tipo}:`, err);
+    console.error(
+      `[tiny-webhook/venda] Error processing tipo=${payload.tipo}:`,
+      err,
+    );
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
 }

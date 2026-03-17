@@ -6,11 +6,10 @@ import {
   ITinyWebhookSituacaoPedido,
   ITinyWebhookVenda,
 } from "@/types/tiny";
-import { TinyOrder } from "@/models/TinyOrder";
-import { TinyProduct } from "@/models/TinyProduct";
-import { TinyProductStock } from "@/models/TinyProductStock";
-import { TinyRateLimit } from "@/models/TinyRateLimit";
-import { TinySalesBucket } from "@/models/TinySalesBucket";
+import { TinyOrder } from "@/models/Tiny/TinyOrder";
+import { TinyRateLimit } from "@/models/Tiny/TinyRateLimit";
+import { TinySalesBucket } from "@/models/Tiny/TinySalesBucket";
+import { ProductRepository } from "@/repositories/ProductRepository";
 
 // ---------------------------------------------------------------------------
 // Environment
@@ -34,10 +33,10 @@ const CANCELLED_STATUSES = ["cancelado"];
 const CHANNEL_MAP: Record<string, string> = {
   "mercado livre fulfillment": "mercadoLivreFulfillment",
   "mercado livre": "mercadoLivre",
-  "shopee": "shopee",
-  "amazon": "amazon",
+  shopee: "shopee",
+  amazon: "amazon",
   "tiktok shop": "tiktok",
-  "magalu": "magalu",
+  magalu: "magalu",
 };
 
 function getChannelKey(nomeEcommerce: string): string | null {
@@ -74,8 +73,15 @@ export async function acquireRateLimit(): Promise<boolean> {
 // HTTP client
 // ---------------------------------------------------------------------------
 
-async function tinyPost<T>(endpoint: string, params: Record<string, string>): Promise<T> {
-  const body = new URLSearchParams({ token: TINY_TOKEN, formato: "JSON", ...params });
+async function tinyPost<T>(
+  endpoint: string,
+  params: Record<string, string>,
+): Promise<T> {
+  const body = new URLSearchParams({
+    token: TINY_TOKEN,
+    formato: "JSON",
+    ...params,
+  });
 
   const res = await fetch(`${TINY_BASE}/${endpoint}`, {
     method: "POST",
@@ -92,7 +98,9 @@ async function tinyPost<T>(endpoint: string, params: Record<string, string>): Pr
 }
 
 async function getProduct(id: number): Promise<ITinyProductResponse> {
-  return tinyPost<ITinyProductResponse>("produto.obter.php", { id: String(id) });
+  return tinyPost<ITinyProductResponse>("produto.obter.php", {
+    id: String(id),
+  });
 }
 
 async function getOrder(id: number): Promise<ITinyOrderResponse> {
@@ -100,7 +108,9 @@ async function getOrder(id: number): Promise<ITinyOrderResponse> {
 }
 
 async function getProductStock(id: number): Promise<ITinyStockResponse> {
-  return tinyPost<ITinyStockResponse>("produto.obter.estoque.php", { id: String(id) });
+  return tinyPost<ITinyStockResponse>("produto.obter.estoque.php", {
+    id: String(id),
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -120,25 +130,20 @@ async function upsertProductStock(productId: number): Promise<void> {
 
   const p = res.retorno.produto;
 
-  await TinyProductStock.findOneAndUpdate(
-    { productId: String(p.id) },
+  const getDeposit = (name: string) =>
+    (p.depositos ?? []).find(
+      ({ deposito: d }) => d.nome === name && d.desconsiderar === "N",
+    )?.deposito.saldo ?? 0;
+
+  const repo = new ProductRepository();
+  await repo.updateStock([
     {
-      productId: String(p.id),
-      name: p.nome,
       sku: p.codigo,
-      unit: p.unidade ?? "",
-      balance: p.saldo ?? 0,
-      reservedBalance: p.saldoReservado ?? 0,
-      deposits: (p.depositos ?? []).map(({ deposito: d }) => ({
-        name: d.nome,
-        tipo: d.nome.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, ""),
-        ignore: d.desconsiderar === "S",
-        balance: d.saldo ?? 0,
-        company: d.empresa,
-      })),
+      storage: getDeposit("Galpão"),
+      incoming: getDeposit("A Caminho"),
+      damage: getDeposit("Avaria"),
     },
-    { upsert: true, new: true },
-  );
+  ]);
 }
 
 // ---------------------------------------------------------------------------
@@ -146,9 +151,11 @@ async function upsertProductStock(productId: number): Promise<void> {
 // ---------------------------------------------------------------------------
 
 /**
- * estoque — Fetch full product from Tiny and upsert TinyProduct with latest stock.
+ * estoque — Fetch full product from Tiny and upsert Product + update stock deposits.
  */
-export async function handleEstoque(payload: ITinyWebhookEstoque): Promise<void> {
+export async function handleEstoque(
+  payload: ITinyWebhookEstoque,
+): Promise<void> {
   const allowed = await acquireRateLimit();
   if (!allowed) {
     throw new RateLimitError("Tiny rate limit reached");
@@ -163,26 +170,13 @@ export async function handleEstoque(payload: ITinyWebhookEstoque): Promise<void>
 
   const p = res.retorno.produto;
 
-  await TinyProduct.findOneAndUpdate(
-    { tinyId: p.id },
-    {
-      tinyId: p.id,
-      sku: p.codigo,
-      name: p.nome,
-      price: p.preco,
-      status: p.situacao,
-      tipo: p.tipo,
-      unidade: p.unidade,
-      // Use the saldo from the webhook as the authoritative stock value
-      // (the product endpoint may lag behind)
-      stock: payload.dados.saldo,
-      ...(p.estoque_minimo !== undefined && { stockMin: p.estoque_minimo }),
-      ...(p.estoque_maximo !== undefined && { stockMax: p.estoque_maximo }),
-      ...(p.gtin && { gtin: p.gtin }),
-      ...(p.ncm && { ncm: p.ncm }),
-    },
-    { upsert: true, new: true },
-  );
+  const repo = new ProductRepository();
+  await repo.upsertBySku(p.codigo, {
+    tinyId: String(p.id),
+    name: p.nome,
+    ...(p.preco != null && { tablePrice: p.preco }),
+    ...(p.ncm && { ncm: p.ncm }),
+  });
 
   await upsertProductStock(payload.dados.idProduto);
 }
@@ -247,20 +241,39 @@ async function recordTinySale(
   const channelKey = getChannelKey(nomeEcommerce);
 
   for (const lineItem of pedido.itens) {
-    const { id_produto: itemId, codigo: sku, descricao: name, quantidade: qty, valor_unitario } =
-      lineItem.item;
+    const {
+      id_produto: itemId,
+      codigo: sku,
+      descricao: name,
+      quantidade: qty,
+      valor_unitario,
+    } = lineItem.item;
 
     const unitPrice = Number(valor_unitario);
     const quantity = Number(qty);
     const product = String(itemId);
     const revenue = unitPrice * quantity;
 
-    const existing = await TinyOrder.findOne({ orderId, itemId: product }).lean();
+    const existing = await TinyOrder.findOne({
+      orderId,
+      itemId: product,
+    }).lean();
     if (existing?.counted) continue;
 
     await TinyOrder.findOneAndUpdate(
       { orderId, itemId: product },
-      { orderId, itemId: product, sku, name, quantity, unitPrice, saleDate, counted: true, ecommerce: nomeEcommerce, situacao },
+      {
+        orderId,
+        itemId: product,
+        sku,
+        name,
+        quantity,
+        unitPrice,
+        saleDate,
+        counted: true,
+        ecommerce: nomeEcommerce,
+        situacao,
+      },
       { upsert: true, new: true },
     );
 
@@ -292,7 +305,9 @@ async function recordTinySale(
       await upsertProductStock(Number(itemId));
     } catch (err) {
       if (err instanceof RateLimitError) throw err;
-      console.warn(`[tiny] Could not update stock for product ${itemId}: ${err}`);
+      console.warn(
+        `[tiny] Could not update stock for product ${itemId}: ${err}`,
+      );
     }
   }
 }

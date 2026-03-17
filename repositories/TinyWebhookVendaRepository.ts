@@ -1,4 +1,4 @@
-import { TinyWebhookVenda } from "@/models/TinyWebhookVenda";
+import { TinyWebhookVenda } from "@/models/Tiny/TinyWebhookVenda";
 import { ITinyWebhookVenda } from "@/types/tiny";
 
 export const TinyWebhookVendaRepository = {

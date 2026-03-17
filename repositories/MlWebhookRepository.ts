@@ -1,4 +1,4 @@
-import { MlWebhook } from "@/models/MlWebhook";
+import { MlWebhook } from "@/models/MercadoLivre/MlWebhook";
 import { IMlWebhookPayload } from "@/types/webhook";
 
 export const MlWebhookRepository = {

@@ -1,4 +1,4 @@
-import { TinyWebhookSituacaoPedido } from "@/models/TinyWebhookSituacaoPedido";
+import { TinyWebhookSituacaoPedido } from "@/models/Tiny/TinyWebhookSituacaoPedido";
 import { ITinyWebhookSituacaoPedido } from "@/types/tiny";
 
 export const TinyWebhookSituacaoPedidoRepository = {
