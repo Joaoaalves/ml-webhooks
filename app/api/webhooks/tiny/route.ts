@@ -5,9 +5,9 @@ import {
   handleVenda,
   RateLimitError,
 } from "@/lib/tiny";
-import { TinyWebhookEstoque } from "@/models/TinyWebhookEstoque";
-import { TinyWebhookSituacaoPedido } from "@/models/TinyWebhookSituacaoPedido";
-import { TinyWebhookVenda } from "@/models/TinyWebhookVenda";
+import { TinyWebhookEstoqueRepository } from "@/repositories/TinyWebhookEstoqueRepository";
+import { TinyWebhookSituacaoPedidoRepository } from "@/repositories/TinyWebhookSituacaoPedidoRepository";
+import { TinyWebhookVendaRepository } from "@/repositories/TinyWebhookVendaRepository";
 import {
   ITinyWebhookEstoque,
   ITinyWebhookPayload,
@@ -22,11 +22,16 @@ export async function POST(req: NextRequest) {
   try {
     payload = await req.json();
   } catch {
+    console.warn(`[tiny-webhook] - Invalid JSON: ${req.body}`);
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
   if (!payload.tipo || !payload.cnpj) {
-    return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    console.warn(`[tiny-webhook] - Missing required fields. Data: ${payload}`);
+    return NextResponse.json(
+      { error: "Missing required fields" },
+      { status: 400 },
+    );
   }
 
   try {
@@ -36,73 +41,35 @@ export async function POST(req: NextRequest) {
       case "inclusao_pedido":
       case "atualizacao_pedido": {
         const p = payload as ITinyWebhookVenda;
-        await TinyWebhookVenda.create({
-          cnpj: p.cnpj,
-          tipo: p.tipo,
-          orderId: p.dados.id,
-          orderNumber: p.dados.numero,
-          date: p.dados.data,
-          codigoSituacao: p.dados.codigoSituacao,
-          idContato: p.dados.idContato,
-          raw: p,
-          processed: false,
-        });
+        await TinyWebhookVendaRepository.save(p);
         await handleVenda(p);
-        await TinyWebhookVenda.findOneAndUpdate(
-          { orderId: p.dados.id, tipo: p.tipo },
-          { processed: true },
-          { sort: { _id: -1 } },
-        );
+        await TinyWebhookVendaRepository.markProcessed(p.dados.id, p.tipo);
         break;
       }
 
       case "estoque": {
         const p = payload as ITinyWebhookEstoque;
-        await TinyWebhookEstoque.create({
-          cnpj: p.cnpj,
-          idEcommerce: p.idEcommerce,
-          tipoEstoque: p.dados.tipoEstoque,
-          saldo: p.dados.saldo,
-          idProduto: p.dados.idProduto,
-          sku: p.dados.sku,
-          skuMapeamento: p.dados.skuMapeamento,
-          skuMapeamentoPai: p.dados.skuMapeamentoPai,
-          raw: p,
-          processed: false,
-        });
+        await TinyWebhookEstoqueRepository.save(p);
         await handleEstoque(p);
-        await TinyWebhookEstoque.findOneAndUpdate(
-          { idProduto: p.dados.idProduto },
-          { processed: true },
-          { sort: { _id: -1 } },
-        );
+        await TinyWebhookEstoqueRepository.markProcessed(p.dados.idProduto);
         break;
       }
 
       case "situacao_pedido": {
         const p = payload as ITinyWebhookSituacaoPedido;
-        await TinyWebhookSituacaoPedido.create({
-          cnpj: p.cnpj,
-          idEcommerce: p.idEcommerce,
-          idPedidoEcommerce: p.dados.idPedidoEcommerce,
-          idVendaTiny: p.dados.idVendaTiny,
-          situacao: p.dados.situacao,
-          descricaoSituacao: p.dados.descricaoSituacao,
-          raw: p,
-          processed: false,
-        });
+        await TinyWebhookSituacaoPedidoRepository.save(p);
         await handleSituacaoPedido(p);
-        await TinyWebhookSituacaoPedido.findOneAndUpdate(
-          { idVendaTiny: p.dados.idVendaTiny },
-          { processed: true },
-          { sort: { _id: -1 } },
+        await TinyWebhookSituacaoPedidoRepository.markProcessed(
+          p.dados.idVendaTiny,
         );
         break;
       }
 
       default:
         // Unknown tipo — saved as-is but no processing
-        console.warn(`[tiny-webhook] Unknown tipo: ${(payload as Record<string, unknown>).tipo}`);
+        console.warn(
+          `[tiny-webhook] Unknown tipo: ${(payload as Record<string, unknown>).tipo}`,
+        );
         return NextResponse.json({ ok: true, note: "unhandled tipo" });
     }
 
