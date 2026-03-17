@@ -88,12 +88,12 @@ export interface ITinyStockResponse {
 
 export interface ITinyOrderItem {
   item: {
-    id: number;
+    id_produto: number | string;
     codigo: string;
     descricao: string;
     unidade: string;
-    quantidade: number;
-    valor_unitario: number;
+    quantidade: number | string;
+    valor_unitario: number | string;
   };
 }
 

@@ -247,7 +247,7 @@ async function recordTinySale(
   const channelKey = getChannelKey(nomeEcommerce);
 
   for (const lineItem of pedido.itens) {
-    const { id: itemId, codigo: sku, descricao: name, quantidade: qty, valor_unitario } =
+    const { id_produto: itemId, codigo: sku, descricao: name, quantidade: qty, valor_unitario } =
       lineItem.item;
 
     const unitPrice = Number(valor_unitario);
@@ -288,7 +288,12 @@ async function recordTinySale(
       { upsert: true, new: true },
     );
 
-    await upsertProductStock(itemId);
+    try {
+      await upsertProductStock(Number(itemId));
+    } catch (err) {
+      if (err instanceof RateLimitError) throw err;
+      console.warn(`[tiny] Could not update stock for product ${itemId}: ${err}`);
+    }
   }
 }
 
