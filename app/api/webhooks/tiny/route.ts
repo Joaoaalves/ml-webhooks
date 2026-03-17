@@ -20,10 +20,19 @@ export async function POST(req: NextRequest) {
   let payload: ITinyWebhookPayload;
 
   try {
-    payload = await req.json();
-  } catch {
-    console.warn(`[tiny-webhook] - Invalid JSON: ${req.body}`);
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    const text = await req.text();
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      // Tiny may send webhooks as application/x-www-form-urlencoded with a "dados" field
+      const params = new URLSearchParams(text);
+      const dados = params.get("dados");
+      if (!dados) throw new Error("No dados field in form body");
+      payload = JSON.parse(dados);
+    }
+  } catch (err) {
+    console.warn(`[tiny-webhook] Could not parse body: ${err}`);
+    return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
 
   if (!payload.tipo || !payload.cnpj) {
