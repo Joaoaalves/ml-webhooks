@@ -250,30 +250,31 @@ async function recordTinySale(
     const { id: itemId, codigo: sku, descricao: name, quantidade: qty, valor_unitario } =
       lineItem.item;
 
-    const unitPrice = valor_unitario;
+    const unitPrice = Number(valor_unitario);
+    const quantity = Number(qty);
     const product = String(itemId);
-    const revenue = unitPrice * qty;
+    const revenue = unitPrice * quantity;
 
     const existing = await TinyOrder.findOne({ orderId, itemId: product }).lean();
     if (existing?.counted) continue;
 
     await TinyOrder.findOneAndUpdate(
       { orderId, itemId: product },
-      { orderId, itemId: product, sku, name, quantity: qty, unitPrice, saleDate, counted: true, ecommerce: nomeEcommerce, situacao },
+      { orderId, itemId: product, sku, name, quantity, unitPrice, saleDate, counted: true, ecommerce: nomeEcommerce, situacao },
       { upsert: true, new: true },
     );
 
     const inc: Record<string, number> = {
-      "total.items": qty,
+      "total.items": quantity,
       "total.revenue": revenue,
       "total.orders": 1,
     };
 
     if (channelKey) {
-      inc[`${channelKey}.valid.items`] = qty;
+      inc[`${channelKey}.valid.items`] = quantity;
       inc[`${channelKey}.valid.revenue`] = revenue;
       inc[`${channelKey}.valid.orders`] = 1;
-      inc[`${channelKey}.byStatus.${situacao}.items`] = qty;
+      inc[`${channelKey}.byStatus.${situacao}.items`] = quantity;
       inc[`${channelKey}.byStatus.${situacao}.revenue`] = revenue;
       inc[`${channelKey}.byStatus.${situacao}.orders`] = 1;
     }
