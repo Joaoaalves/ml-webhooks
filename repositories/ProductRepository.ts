@@ -22,15 +22,11 @@ function withCalculatedFields<T extends Partial<IProduct>>(product: T): T {
   return { ...product, priceWithTaxes, unitPrice };
 }
 
-// ─── Data mapping ─────────────────────────────────────────────────────────────
-
 /** Maps form's supplierId field → Mongoose's supplier field. */
 function mapSupplier(data: any) {
   const { supplierId, ...rest } = data;
   return supplierId ? { ...rest, supplier: supplierId } : rest;
 }
-
-// ─── Repository ───────────────────────────────────────────────────────────────
 
 export class ProductRepository {
   create(data: any) {

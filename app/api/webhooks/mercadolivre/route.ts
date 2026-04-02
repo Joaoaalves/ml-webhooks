@@ -4,11 +4,23 @@ import { MlWebhookRepository } from "@/repositories/MlWebhookRepository";
 import { IMlWebhookPayload } from "@/types/webhook";
 import { NextRequest, NextResponse } from "next/server";
 
+const repeat_url = process.env.REPEAT_URL;
+
 export async function POST(req: NextRequest) {
   let payload: IMlWebhookPayload;
 
   try {
-    payload = await req.json();
+    const rawBody = await req.text();
+    payload = JSON.parse(rawBody) as IMlWebhookPayload;
+
+    if (repeat_url)
+      await fetch(repeat_url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: rawBody,
+      });
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
